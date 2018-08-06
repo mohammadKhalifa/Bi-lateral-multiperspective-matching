@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from base import BaseTrainer
 
+from matplotlib import pyplot as plt
 
 class Trainer(BaseTrainer):
     """
@@ -22,7 +23,7 @@ class Trainer(BaseTrainer):
         self.log_step = int(np.sqrt(self.batch_size))
 
     def _to_tensor(self, data, target):
-        data, target = torch.FloatTensor(data), torch.LongTensor(target)
+        data, target = torch.FloatTensor(data), torch.FloatTensor(target)
         if self.with_cuda:
             data, target = data.to(self.gpu), target.to(self.gpu)
         return data, target
@@ -31,7 +32,7 @@ class Trainer(BaseTrainer):
         acc_metrics = np.zeros(len(self.metrics))
         output = output.cpu().data.numpy()
         target = target.cpu().data.numpy()
-        output = np.argmax(output, axis=1)
+        #output = np.argmax(output, axis=1)
         for i, metric in enumerate(self.metrics):
             acc_metrics[i] += metric(output, target)
         return acc_metrics
@@ -56,18 +57,20 @@ class Trainer(BaseTrainer):
 
         total_loss = 0
         total_metrics = np.zeros(len(self.metrics))
-        for batch_idx, (data, target) in enumerate(self.data_loader):
-            data, target = self._to_tensor(data, target)
-
+        losses = []
+        for batch_idx, (p, q, target) in enumerate(self.data_loader):
+            
+            _, target = self._to_tensor(p, target)
             self.optimizer.zero_grad()
-            output = self.model(data)
+            output = self.model(p, q, self.data_loader.get_pretrained_embeddings())
             loss = self.loss(output, target)
             loss.backward()
             self.optimizer.step()
 
             total_loss += loss.item()
+            losses.append(loss.item())
             total_metrics += self._eval_metrics(output, target)
-
+            
             if self.verbosity >= 2 and batch_idx % self.log_step == 0:
                 self.logger.info('Train Epoch: {} [{}/{} ({:.0f}%)] Loss: {:.6f}'.format(
                     epoch,
@@ -75,6 +78,13 @@ class Trainer(BaseTrainer):
                     len(self.data_loader) * self.data_loader.batch_size,
                     100.0 * batch_idx / len(self.data_loader),
                     loss.item()))
+            
+
+        #plt.plot(range(len(losses)), losses)
+        #plt.xlabel("iter")
+        #plt.ylabel("loss")
+        #plt.show()
+
 
         log = {
             'loss': total_loss / len(self.data_loader),
@@ -83,8 +93,9 @@ class Trainer(BaseTrainer):
 
         if self.valid:
             val_log = self._valid_epoch()
+            print(val_log)
             log = {**log, **val_log}
-
+        print(log)
         return log
 
     def _valid_epoch(self):
@@ -100,10 +111,11 @@ class Trainer(BaseTrainer):
         total_val_loss = 0
         total_val_metrics = np.zeros(len(self.metrics))
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(self.valid_data_loader):
-                data, target = self._to_tensor(data, target)
+            for batch_idx, (p, q, target) in enumerate(self.valid_data_loader):
 
-                output = self.model(data)
+                _, target = self._to_tensor(p, target)
+                output = self.model(p, q, self.data_loader.get_pretrained_embeddings())
+                
                 loss = self.loss(output, target)
 
                 total_val_loss += loss.item()

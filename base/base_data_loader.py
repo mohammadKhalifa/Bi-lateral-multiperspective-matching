@@ -38,6 +38,7 @@ class BaseDataLoader:
         """
         :return: Total number of batches
         """
+        #return 50
         return self._n_samples() // self.batch_size
 
     def _n_samples(self):
